@@ -1,0 +1,49 @@
+﻿@{
+    ViewData["Title"] = "Real-Time pH Monitoring";
+}
+
+<h2>Real-Time pH Monitoring</h2>
+<canvas id="phChart"></canvas>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.5/signalr.min.js"></script>
+
+<script>
+    var ctx = document.getElementById('phChart').getContext('2d');
+    var phChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'pH Level',
+                data: [],
+                borderColor: 'blue',
+                borderWidth: 2,
+                fill: false
+            }]
+        },
+        options: {
+            scales: {
+                x: { display: true },
+                y: { min: 0, max: 14 }
+            }
+        }
+    });
+
+    // Connect to SignalR Hub
+    var connection = new signalR.HubConnectionBuilder()
+        .withUrl("/sensorHub")
+        .build();
+
+    connection.start().catch(err => console.error(err));
+
+    connection.on("ReceiveSensorData", (value, timestamp) => {
+        if (phChart.data.labels.length > 20) {
+            phChart.data.labels.shift();
+            phChart.data.datasets[0].data.shift();
+        }
+        phChart.data.labels.push(timestamp);
+        phChart.data.datasets[0].data.push(value);
+        phChart.update();
+    });
+</script>

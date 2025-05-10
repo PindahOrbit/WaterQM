@@ -3,9 +3,12 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
+using MimeKit;
+using WaterQM.Areas.Identity.Data;
 using WaterQM.Data;
 using WaterQM.Models;
 
@@ -15,17 +18,25 @@ namespace WaterQM.Controllers
     public class AlertsController : Controller
     {
         private readonly AppDbContext _context;
-
-        public AlertsController(AppDbContext context)
+        private readonly IConfiguration _configuration;
+        private readonly UserManager<AppUser> _userManager;
+        public AlertsController(AppDbContext context, IConfiguration configuration, UserManager<AppUser> userManager)
         {
             _context = context;
+            _configuration = configuration;
+            _userManager = userManager;
         }
 
         // GET: Alerts
         public async Task<IActionResult> Index()
         {
             var appDbContext = _context.Alerts.Include(a => a.Sensor).Include(a => a.User);
-            return View(await appDbContext.ToListAsync());
+
+            var data = await appDbContext.ToListAsync();
+
+
+            data = data.OrderByDescending(d => d.AlertTime).Take(200).ToList();
+            return View(data);
         }
 
         // GET: Alerts/Details/5
@@ -49,8 +60,66 @@ namespace WaterQM.Controllers
         }
 
         // GET: Alerts/Create
-        public IActionResult Create()
+        public async Task<IActionResult> CreateTu()
         {
+            var user = await _userManager.GetUserAsync(User);
+            _context.Add(new Alert()
+            {
+                AlertMessage = "Low turbidity",
+                AlertTime = DateTime.Now,
+                SensorId = 2,
+                UserId = user.Id,
+
+            });
+
+            await _context.SaveChangesAsync();
+
+            return Ok();
+
+        }
+        public async Task<IActionResult> Create()
+        {
+            var user = await _userManager.GetUserAsync(User);
+            _context.Add(new Alert()
+            {
+                AlertMessage = "alert on water levels",
+                AlertTime = DateTime.Now,
+                SensorId = 1,
+                UserId = user.Id,
+
+            });
+
+            await _context.SaveChangesAsync();
+
+            return Ok();
+          
+            // use mailkit/mimekit to send email without SSL certificate validation
+            var emailConfig = _configuration.GetSection("EmailConfiguration");
+            var smtpServer = emailConfig["SmtpServer"];
+            var port = int.Parse(emailConfig["Port"]);
+            var smtpUser = emailConfig["UserName"];
+            var smtpPass = emailConfig["Password"];
+            var fromAddress = emailConfig["From"];
+
+            var email = new MimeMessage();
+            email.From.Add(new MailboxAddress("water", fromAddress));
+            email.To.Add(new MailboxAddress("", "maxmanetsa@gmail.com"));
+            email.Subject = "Welcome to CPRM2 – Your Partner Portal Access";
+
+            email.Body = new TextPart("plain")
+            {
+                Text = $@"alert on water evels"
+            };
+
+
+            using var smtpClient = new MailKit.Net.Smtp.SmtpClient();
+            // disable SSL certificate validation
+            smtpClient.ServerCertificateValidationCallback = (sender, certificate, chain, sslPolicyErrors) => true;
+            await smtpClient.ConnectAsync(smtpServer, port, true);
+            await smtpClient.AuthenticateAsync(smtpUser, smtpPass);
+            await smtpClient.SendAsync(email);
+            await smtpClient.DisconnectAsync(true);
+
             ViewData["SensorId"] = new SelectList(_context.Sensors, "Id", "Id");
             ViewData["UserId"] = new SelectList(_context.Users, "Id", "Id");
             return View();
